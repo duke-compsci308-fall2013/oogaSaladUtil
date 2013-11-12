@@ -8,6 +8,7 @@ function ooga(){
   tomerge=$1 
   git checkout $tomerge
   git merge $branch
+  git pull origin $tomerge
   git push origin $tomerge
   git checkout $branch
 }
