@@ -1,6 +1,12 @@
 package xmlserializer;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.lang.reflect.*;
 import java.util.*;
 
@@ -13,6 +19,7 @@ import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 
 import org.w3c.dom.*;
+import org.xml.sax.InputSource;
 
 import com.sun.org.apache.xerces.internal.parsers.DOMParser;
 
@@ -40,37 +47,37 @@ import com.sun.org.apache.xerces.internal.parsers.DOMParser;
  * included test cases in TestXMLObjectSerializer.java that should help illustrate the usage of this class.
  * <p>
  * The method formatXML has been added to create indentations for better readability, and also to omit the XML declaration
- * at the beginning of the file.
- * @author Alex Song
+ * at the beginning of the file. {@author Alex Song}
  * <p>
  * Happy serializing.
  * 
  * @author Tristan Bepler
+ * @author Alex Song
  *
  */
 
 public class XMLSerializerUtil {
-	
+
 	public static final Map<Class<?>, Class<?>> WRAPPER_TYPES = getWrapperTypes();
-	
+
 	public static final Map<Character, Character> REPLACEMENT_MAP = replacementMap();
 	public static final Map<String, Class<?>> PRIMITIVE_CLASSES = primitiveClasses();
 
 	public static boolean isWrapperType(Class<?> clazz){
 		return WRAPPER_TYPES.values().contains(clazz);
 	}
-	
+
 	public static Class<?> getWrapper(Class<?> clazz){
 		return WRAPPER_TYPES.get(clazz);
 	}
-	
+
 	private static Map<Character, Character> replacementMap(){
 		Map<Character, Character> map = new HashMap<Character, Character>();
 		map.put('$', '.');
 		map.put('.', '$');
 		return map;
 	}
-	
+
 	private static Map<String, Class<?>> primitiveClasses(){
 		Map<String, Class<?>> map = new HashMap<String, Class<?>>();
 		map.put("boolean", boolean.class);
@@ -98,7 +105,7 @@ public class XMLSerializerUtil {
 		ret.put(Void.TYPE, Void.class);
 		return ret;
 	}
-	
+
 	/**
 	 * This method parses the given value into the specified primitive or wrapper class.
 	 * @param clazz - primitive or wrapper class used to parse
@@ -106,38 +113,36 @@ public class XMLSerializerUtil {
 	 * @return object of type clazz parsed from the string
 	 */
 	public static Object toObject( Class<?> clazz, String value ) {
-	    if( Boolean.TYPE == clazz ) return Boolean.parseBoolean( value );
-	    if( Byte.TYPE == clazz ) return Byte.parseByte( value );
-	    if( Short.TYPE == clazz ) return Short.parseShort( value );
-	    if( Integer.TYPE == clazz ) return Integer.parseInt( value );
-	    if( Long.TYPE == clazz ) return Long.parseLong( value );
-	    if( Float.TYPE == clazz ) return Float.parseFloat( value );
-	    if( Double.TYPE == clazz ) return Double.parseDouble( value );
-	    if( Boolean.class == clazz ) return Boolean.parseBoolean( value );
-	    if( Byte.class == clazz ) return Byte.parseByte( value );
-	    if( Short.class == clazz ) return Short.parseShort( value );
-	    if( Integer.class == clazz ) return Integer.parseInt( value );
-	    if( Long.class == clazz ) return Long.parseLong( value );
-	    if( Float.class == clazz ) return Float.parseFloat( value );
-	    if( Double.class == clazz ) return Double.parseDouble( value );
-	    if( Character.class == clazz) return value.charAt(0);
-	    if( Character.TYPE == clazz) return value.charAt(0);
-	    return value;
+		if( Boolean.TYPE == clazz ) return Boolean.parseBoolean( value );
+		if( Byte.TYPE == clazz ) return Byte.parseByte( value );
+		if( Short.TYPE == clazz ) return Short.parseShort( value );
+		if( Integer.TYPE == clazz ) return Integer.parseInt( value );
+		if( Long.TYPE == clazz ) return Long.parseLong( value );
+		if( Float.TYPE == clazz ) return Float.parseFloat( value );
+		if( Double.TYPE == clazz ) return Double.parseDouble( value );
+		if( Boolean.class == clazz ) return Boolean.parseBoolean( value );
+		if( Byte.class == clazz ) return Byte.parseByte( value );
+		if( Short.class == clazz ) return Short.parseShort( value );
+		if( Integer.class == clazz ) return Integer.parseInt( value );
+		if( Long.class == clazz ) return Long.parseLong( value );
+		if( Float.class == clazz ) return Float.parseFloat( value );
+		if( Double.class == clazz ) return Double.parseDouble( value );
+		if( Character.class == clazz) return value.charAt(0);
+		if( Character.TYPE == clazz) return value.charAt(0);
+		return value;
 	}
 	
-	
 	/**
-	 * This method is used to serialize the given object to XML. The object XML will be written to a file at the path
-	 * specified by the given string. Objects should implement the Serializable interface or inherit it from a superclass.
-	 * Furthermore, as many superclasses and contained classes should implement Serializable as possible. If they do not,
-	 * behavior may be unpredictable. See this classes description for more information. {@link XMLSerializerUtil}
+	 * This method is used to serialize the given object as XML to the given OutputStream. Objects should implement
+	 * the Serializable interface or inherit it from a superclass. Furthermore, as many superclasses and contained
+	 * classes should implement Serializable as possible. If they do not, behavior may be unpredictable. See this
+	 * classes description for more information. {@link XMLSerializerUtil}
 	 * @param o - object to be serialized to XML
-	 * @param file - file the object XML should be written to
+	 * @param out - OutputStream this object will be written to
 	 * @throws ObjectWriteException
 	 */
-	public static void write(Object o, String file) throws ObjectWriteException{
+	public static void serialize(Object o, OutputStream out) throws ObjectWriteException{
 		try{
-			File out = new File(file);
 			DocumentBuilderFactory docFactory = DocumentBuilderFactory.newInstance();
 			DocumentBuilder docBuilder = docFactory.newDocumentBuilder();
 			Document doc = docBuilder.newDocument();
@@ -149,11 +154,29 @@ public class XMLSerializerUtil {
 			StreamResult result = new StreamResult(out);
 			transformer.setOutputProperty(OutputKeys.INDENT, "yes");
 			transformer.transform(source, result);
+		}catch(Exception e){
+			throw new ObjectWriteException(e);
+		}
+	}
+
+
+	/**
+	 * This method is used to serialize the given object to XML. The object XML will be written to a file at the path
+	 * specified by the given string. Objects should implement the Serializable interface or inherit it from a superclass.
+	 * Furthermore, as many superclasses and contained classes should implement Serializable as possible. If they do not,
+	 * behavior may be unpredictable. See this classes description for more information. {@link XMLSerializerUtil}
+	 * @param o - object to be serialized to XML
+	 * @param file - file the object XML should be written to
+	 * @throws ObjectWriteException
+	 */
+	public static void write(Object o, String file) throws ObjectWriteException{
+		try{
+			serialize(o, new BufferedOutputStream(new FileOutputStream(file)));
 		} catch (Exception e){
 			throw new ObjectWriteException(e);
 		}
 	}
-	
+
 	/**
 	 * This method recursively serializes objects.
 	 * 
@@ -233,7 +256,7 @@ public class XMLSerializerUtil {
 			fillTreeRecurse(value, field, doc, written);
 		}
 	}
-	
+
 	/**
 	 * Returns all the unique fields of the classes in the given list.
 	 * 
@@ -245,7 +268,7 @@ public class XMLSerializerUtil {
 		}
 		return fields.toArray(new Field[fields.size()]);
 	}
-	
+
 	/**
 	 * Method for handling serialization of String objects.
 	 * 
@@ -257,7 +280,7 @@ public class XMLSerializerUtil {
 		}
 		return false;
 	}
-	
+
 	/**
 	 * Method for handling deserialization of String objects.
 	 * 
@@ -268,7 +291,7 @@ public class XMLSerializerUtil {
 		}
 		return null;
 	}
-	
+
 	/**
 	 * Method for handling serialization of class objects.
 	 * 
@@ -280,7 +303,7 @@ public class XMLSerializerUtil {
 		}
 		return false;
 	}
-	
+
 	/**
 	 * Method for handling deserialization of class objects.
 	 *
@@ -298,7 +321,7 @@ public class XMLSerializerUtil {
 		}
 		return null;
 	}
-	
+
 	/**
 	 * Method for handling serialization of map objects. Maps were very verbose before.
 	 * 
@@ -320,7 +343,7 @@ public class XMLSerializerUtil {
 		}
 		return false;
 	}
-	
+
 	/**
 	 * This method handled deserialization of map objects.
 	 * 
@@ -373,6 +396,46 @@ public class XMLSerializerUtil {
 		}
 		return null;
 	}
+	
+	/**
+	 * This method is used to deserialize a previously XML serialized object from the given InputStream. The class
+	 * of the object that should be returned is specified by the clazz parameter. The ClassLoader will be used to
+	 * retrieve the classes required for object instantiation. This is to allow loading of classes from external sources
+	 * if necessary. See this classes description for more information on object serialization and deserialization.
+	 * {@link XMLSerializerUtil}
+	 * @param <T> - the type of the object that will be returned
+	 * @param clazz - the class of the object to be deserialized
+	 * @param in - the InputStream the object will be deserialized from
+	 * @param loader - a ClassLoader that will be used to load Class objects
+	 * @return - the deserialized object
+	 * @throws ObjectReadException
+	 */
+	public static <T> T deserialize(Class<T> clazz, InputStream in, ClassLoader loader) throws ObjectReadException{
+		try {
+			DOMParser parser = new DOMParser();
+			parser.parse(new InputSource(in));
+			Document doc = parser.getDocument();
+			doc.getDocumentElement().normalize();
+			T readObject = readTreeRecurse(clazz, doc.getDocumentElement(), loader, new HashMap<Integer, Object>());
+			return readObject;
+		} catch (Exception e) {
+			throw new ObjectReadException(e);
+		}
+	}
+	
+	/**
+	 * This method is used to deserialize a previously XML serialized object from the given InputStream. The class
+	 * of the object that should be returned is specified by the clazz parameter. See this classes description for
+	 * more information on object serialization and deserialization.{@link XMLSerializerUtil}
+	 * @param <T> - the type of the object that will be returned
+	 * @param clazz - the class of the object to be deserialized
+	 * @param in - the InputStream the object will be deserialized from
+	 * @return - the deserialized object
+	 * @throws ObjectReadException
+	 */
+	public static <T> T deserialize(Class<T> clazz, InputStream in) throws ObjectReadException{
+		return deserialize(clazz, in, ClassLoader.getSystemClassLoader());
+	}
 
 	/**
 	 * This method is used to deserialize a previously serialized object from the XML file it was written to. The class
@@ -389,18 +452,13 @@ public class XMLSerializerUtil {
 	 */
 	public static <T> T read(Class<T> clazz, String file, ClassLoader loader) throws ObjectReadException{
 		try {
-			DOMParser parser = new DOMParser();
-			parser.parse(file);
-			Document doc = parser.getDocument();
-			doc.getDocumentElement().normalize();
-			T readObject = readTreeRecurse(clazz, doc.getDocumentElement(), loader, new HashMap<Integer, Object>());
-			return readObject;
+			return deserialize(clazz, new BufferedInputStream(new FileInputStream(file)), loader);
 		} catch (Exception e) {
 			throw new ObjectReadException(e);
 		}
-		
+
 	}
-	
+
 	/**
 	 * This method is used to deserialize and object from its serialized object XML. The class of the object is specified
 	 * by the clazz parameter. The path of the file the object should be deserialized from is specified by the file 
@@ -544,14 +602,14 @@ public class XMLSerializerUtil {
 				}
 			}
 			return readObject;
-			
+
 		} catch (Exception e) {
 			throw new ObjectReadException(e);
 		}
 
 
 	}
-	
+
 	/**
 	 * This method returns a list of the direct element node children of this element node with the specified tag.
 	 * @param node - parent node
@@ -569,25 +627,24 @@ public class XMLSerializerUtil {
 		}
 		return children;
 	}
-	
 
-    /**
-     * This method formats the XML file by omitting the XML Declaration and 
-     * creating indentations 
-     * @param transformer - transformer that is used to process XML
-     * @return a transformer that omits the XML declaration and performs indentations  
-     * @author Alex Song
-     */
-    private static Transformer formatXML(Transformer transformer) {
-        transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
-        transformer.setOutputProperty(OutputKeys.INDENT, "yes");
-        transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "2");
-        return transformer;
-    }
-	
-	
-	
-	
-	
-	
+	/**
+	 * This method formats the XML file by omitting the XML Declaration and 
+	 * creating indentations 
+	 * @param transformer - transformer that is used to process XML
+	 * @return a transformer that omits the XML declaration and performs indentations  
+	 * @author Alex Song
+	 */
+	private static Transformer formatXML(Transformer transformer) {
+		transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
+		transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+		transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "2");
+		return transformer;
+	}
+
+
+
+
+
+
 }

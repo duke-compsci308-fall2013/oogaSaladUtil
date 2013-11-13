@@ -1,9 +1,17 @@
 package xmlserializer;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.Serializable;
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
+import java.net.URISyntaxException;
 import java.util.*;
+
+import org.xml.sax.SAXException;
 
 /**
  * Some test cases for the XMLSerializer
@@ -150,6 +158,25 @@ public class TestXMLObjectSerializer extends junit.framework.TestCase{
 		assertEquals(readTree, readTree.get(key3));
 	}
 	
+	public void testSerializeDeserialize() throws IOException, ObjectWriteException, ObjectReadException{
+		
+		Collection<String> test = new HashSet<String>();
+		test.add("this");
+		test.add("is");
+		test.add("a");
+		test.add("test");
+		
+		XMLSerializerUtil.serialize(test, new BufferedOutputStream(new FileOutputStream("test7.xml")));
+		
+		Collection<String> in = XMLSerializerUtil.deserialize(
+				Collection.class,
+				new BufferedInputStream(new FileInputStream("test7.xml")));
+		
+		assertEquals(test.size(), in.size());
+		assertEquals(test.getClass(), in.getClass());
+		assertTrue(test.containsAll(in));
+		assertTrue(in.containsAll(test));
+	}
 	
 	
 }
