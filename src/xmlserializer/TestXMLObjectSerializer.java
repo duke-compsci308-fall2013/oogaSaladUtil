@@ -5,6 +5,13 @@ import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.util.*;
 
+/**
+ * Some test cases for the XMLSerializer
+ * 
+ * @author Tristan Bepler
+ *
+ */
+
 public class TestXMLObjectSerializer extends junit.framework.TestCase{
 	
 	

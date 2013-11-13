@@ -4,6 +4,13 @@ import java.lang.reflect.*;
 
 import sun.reflect.*;
 
+/**
+ * This class is used by the XMLSerializer to instantiate objects using the serialization constructor.
+ * 
+ * @author Tristan Bepler
+ *
+ */
+
 public class SilentObjectCreator {
 	
 	

@@ -1,9 +1,14 @@
 package xmlserializer;
 
+/**
+ * Exception thrown by XMLSerializer
+ * 
+ * @author Tristan Bepler
+ *
+ */
+
 public class ObjectReadException extends Exception{
-	/**
-	 * 
-	 */
+	
 	private static final long serialVersionUID = 1L;
 
 	public ObjectReadException(){
