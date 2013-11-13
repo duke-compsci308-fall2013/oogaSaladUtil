@@ -24,11 +24,12 @@ import org.xml.sax.InputSource;
 import com.sun.org.apache.xerces.internal.parsers.DOMParser;
 
 /**
- * This class can be used to serialize objects to XML files and deserialize them from those XML files, in a similar
- * manner to how java serialization works. It works for almost all objects, but there are a few objects that cannot
- * be instantiated due to java's internal security. I included a work around for instantiating Class objects, but there
- * may be others that can not be deserialized properly. I would advise adding a work around for these
- * specific cases, not serializing objects with those components, or using the @XMLIgnore annotation.
+ * This class can be used to serialize objects as XML to files or OutputStreams and deserialize objects from those XML
+ * files or InputStreams, in a manner similar to how java serialization works. It works for almost all objects, but
+ * there are a few objects that cannot be instantiated due to java's internal security. I included a work around for
+ * instantiating Class objects, but there may be others that can not be deserialized properly. I would advise adding
+ * a work around for these specific cases, not serializing objects with those components, or using the @XMLIgnore
+ * annotation.
  * <p>
  * Furthermore, while I have tried to test this these methods on a variety of classes, I cannot guarantee that it
  * will work in all cases. If bugs come up, you can try to fix them or let me know, and I will try to fix them. As
@@ -45,6 +46,7 @@ import com.sun.org.apache.xerces.internal.parsers.DOMParser;
  * Finally, several objects are constructed using special cases, this is either to prevent security exceptions, as is
  * the case for the Class class, or to make their outputs less verbose, as is the case for Strings and Maps. I have
  * included test cases in TestXMLObjectSerializer.java that should help illustrate the usage of this class.
+ * {@author Tristan Bepler}
  * <p>
  * The method formatXML has been added to create indentations for better readability, and also to omit the XML declaration
  * at the beginning of the file. {@author Alex Song}
@@ -111,6 +113,7 @@ public class XMLSerializerUtil {
 	 * @param clazz - primitive or wrapper class used to parse
 	 * @param value - string to be parsed
 	 * @return object of type clazz parsed from the string
+	 * @author Trisan Bepler
 	 */
 	public static Object toObject( Class<?> clazz, String value ) {
 		if( Boolean.TYPE == clazz ) return Boolean.parseBoolean( value );
@@ -140,6 +143,7 @@ public class XMLSerializerUtil {
 	 * @param o - object to be serialized to XML
 	 * @param out - OutputStream this object will be written to
 	 * @throws ObjectWriteException
+	 * @author Tristan Bepler
 	 */
 	public static void serialize(Object o, OutputStream out) throws ObjectWriteException{
 		try{
@@ -168,6 +172,7 @@ public class XMLSerializerUtil {
 	 * @param o - object to be serialized to XML
 	 * @param file - file the object XML should be written to
 	 * @throws ObjectWriteException
+	 * @author Tristan Bepler
 	 */
 	public static void write(Object o, String file) throws ObjectWriteException{
 		try{
@@ -179,7 +184,7 @@ public class XMLSerializerUtil {
 
 	/**
 	 * This method recursively serializes objects.
-	 * 
+	 * @author Tristan Bepler
 	 */
 	private static void fillTreeRecurse(Object o, Element parent, Document doc, ArrayList<Object> written) throws IllegalArgumentException, IllegalAccessException{
 		// write nothing if o is null
@@ -259,7 +264,7 @@ public class XMLSerializerUtil {
 
 	/**
 	 * Returns all the unique fields of the classes in the given list.
-	 * 
+	 * @author Tristan Bepler
 	 */
 	private static Field[] getAllFields(List<Class<?>> classes){
 		Set<Field> fields = new HashSet<Field>();
@@ -271,7 +276,7 @@ public class XMLSerializerUtil {
 
 	/**
 	 * Method for handling serialization of String objects.
-	 * 
+	 * @author Tristan Bepler
 	 */
 	private static boolean writeSpecialCaseObjectIsString(Object o, Element cur, Document doc, ArrayList<Object> written){
 		if(o instanceof String){
@@ -283,7 +288,7 @@ public class XMLSerializerUtil {
 
 	/**
 	 * Method for handling deserialization of String objects.
-	 * 
+	 * @author Tristan Bepler
 	 */
 	private static Object readSpecialCaseObjectIsString(Class<?> clazz, Element cur, Map<Integer, Object> references){
 		if(String.class == clazz){
@@ -294,7 +299,7 @@ public class XMLSerializerUtil {
 
 	/**
 	 * Method for handling serialization of class objects.
-	 * 
+	 * @author Tristan Bepler
 	 */
 	private static boolean writeSpecialCaseObjectIsClass(Object o, Element cur, Document doc, ArrayList<Object> written){
 		if(o instanceof Class){
@@ -306,7 +311,7 @@ public class XMLSerializerUtil {
 
 	/**
 	 * Method for handling deserialization of class objects.
-	 *
+	 * @author Tristan Bepler
 	 */
 	private static Object readSpecialCaseObjectIsClass(Class<?> clazz, Element cur, ClassLoader loader, Map<Integer, Object>references) throws ClassNotFoundException{
 		if(Class.class == clazz){
@@ -324,7 +329,7 @@ public class XMLSerializerUtil {
 
 	/**
 	 * Method for handling serialization of map objects. Maps were very verbose before.
-	 * 
+	 * @author Tristan Bepler
 	 */
 	private static boolean writeSpecialCaseObjectIsMap(Object o, Element cur, Document doc, ArrayList<Object> written) throws IllegalArgumentException, IllegalAccessException {
 		if(o instanceof Map){
@@ -346,7 +351,7 @@ public class XMLSerializerUtil {
 
 	/**
 	 * This method handled deserialization of map objects.
-	 * 
+	 * @author Tristan Bepler
 	 */
 	private static Object readSpecialCaseObjectIsMap(Class<?> clazz, Element cur, ClassLoader loader, Map<Integer, Object> references) throws Exception{
 		if(Map.class.isAssignableFrom(clazz)){
@@ -409,6 +414,7 @@ public class XMLSerializerUtil {
 	 * @param loader - a ClassLoader that will be used to load Class objects
 	 * @return - the deserialized object
 	 * @throws ObjectReadException
+	 * @author Tristan Bepler
 	 */
 	public static <T> T deserialize(Class<T> clazz, InputStream in, ClassLoader loader) throws ObjectReadException{
 		try {
@@ -432,6 +438,7 @@ public class XMLSerializerUtil {
 	 * @param in - the InputStream the object will be deserialized from
 	 * @return - the deserialized object
 	 * @throws ObjectReadException
+	 * @author Trisan Bepler
 	 */
 	public static <T> T deserialize(Class<T> clazz, InputStream in) throws ObjectReadException{
 		return deserialize(clazz, in, ClassLoader.getSystemClassLoader());
@@ -449,6 +456,7 @@ public class XMLSerializerUtil {
 	 * @param loader - a ClassLoader that will be used to load Class objects.
 	 * @return - the deserialized object
 	 * @throws ObjectReadException
+	 * @author Tristan Bepler
 	 */
 	public static <T> T read(Class<T> clazz, String file, ClassLoader loader) throws ObjectReadException{
 		try {
@@ -469,6 +477,7 @@ public class XMLSerializerUtil {
 	 * @param file - the file containing the object XML
 	 * @return - the deserialized object
 	 * @throws ObjectReadException
+	 * @author Tristan Bepler
 	 */
 	public static <T> T read(Class<T> clazz, String file) throws ObjectReadException{
 		return read(clazz, file, ClassLoader.getSystemClassLoader());
@@ -476,7 +485,7 @@ public class XMLSerializerUtil {
 
 	/**
 	 * This method recursively deserializes objects
-	 * 
+	 * @author Tristan Bepler
 	 */
 	private static <T,S extends T> S readTreeRecurse(Class<T> clazz, Element cur, ClassLoader loader, Map<Integer, Object> references) throws ObjectReadException{
 		//if cur is null return null
@@ -615,6 +624,7 @@ public class XMLSerializerUtil {
 	 * @param node - parent node
 	 * @param tag - tag of direct children to be returned
 	 * @return a list containing the direct element children with the given tag
+	 * @author Tristan Bepler
 	 */
 	public static List<Element> getDirectChildElementsByTag(Element node, String tag){
 		List<Element> children = new ArrayList<Element>();
