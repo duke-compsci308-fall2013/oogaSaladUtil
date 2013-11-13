@@ -39,7 +39,9 @@ import com.sun.org.apache.xerces.internal.parsers.DOMParser;
  * the case for the Class class, or to make their outputs less verbose, as is the case for Strings and Maps. I have
  * included test cases in TestXMLObjectSerializer.java that should help illustrate the usage of this class.
  * <p>
- * I apologize that the XML files aren't nicely tabbed. DOMParser and Transform are stupid.
+ * The method formatXML has been added to create indentations for better readability, and also to omit the XML declaration
+ * at the beginning of the file.
+ * @author Alex Song
  * <p>
  * Happy serializing.
  * 
@@ -142,7 +144,7 @@ public class XMLSerializerUtil {
 			fillTreeRecurse(o, null, doc, new ArrayList<Object>());
 			TransformerFactory transformerFactory = TransformerFactory.newInstance();
 			transformerFactory.setAttribute("indent-number", 2);
-			Transformer transformer = transformerFactory.newTransformer();
+			Transformer transformer = formatXML(transformerFactory.newTransformer());
 			DOMSource source = new DOMSource(doc);
 			StreamResult result = new StreamResult(out);
 			transformer.setOutputProperty(OutputKeys.INDENT, "yes");
@@ -568,7 +570,20 @@ public class XMLSerializerUtil {
 		return children;
 	}
 	
-	
+
+    /**
+     * This method formats the XML file by omitting the XML Declaration and 
+     * creating indentations 
+     * @param transformer - transformer that is used to process XML
+     * @return a transformer that omits the XML declaration and performs indentations  
+     * @author Alex Song
+     */
+    private static Transformer formatXML(Transformer transformer) {
+        transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
+        transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+        transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "2");
+        return transformer;
+    }
 	
 	
 	
