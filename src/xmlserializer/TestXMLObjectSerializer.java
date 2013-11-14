@@ -13,6 +13,9 @@ import java.util.*;
 
 import org.xml.sax.SAXException;
 
+import xmlserializer.XMLSerializerUtil.ReadField;
+import xmlserializer.XMLSerializerUtil.WriteField;
+
 /**
  * Some test cases for the XMLSerializer
  * 
@@ -48,6 +51,38 @@ public class TestXMLObjectSerializer extends junit.framework.TestCase{
 		}
 	}
 	
+	public static class TestReadWriteOverride extends TestParent{
+		public String val = "entry";
+		public String other = "hello world";
+		public int stuff = 150;
+		private void readObjectXML(ReadField reader) throws ObjectReadException{
+			System.out.println("readOjectXML called");
+			val = (String) reader.read("a", null);
+			other = (String) reader.read("b", null);
+			stuff = reader.read("c", 0);
+		}
+		private void writeObjectXML(WriteField writer) throws ObjectWriteException{
+			System.out.println("writeObjectXML called");
+			writer.write("a", val);
+			writer.write("b", other);
+			writer.write("c", stuff);
+		}
+	}
+	
+	public static class TestOverrideChild extends TestReadWriteOverride{
+		String remember = "important stuff";
+		String forget = "who cares?";
+		private void readObjectXML(ReadField reader) throws ObjectReadException{
+			System.out.println("readOjectXML called2");
+			remember = (String) reader.read("important", null);
+			forget = (String) reader.read("whatever", null);
+		}
+		private void writeObjectXML(WriteField writer) throws ObjectWriteException{
+			System.out.println("writeObjectXML called2");
+			writer.write("important", remember);
+		}
+	}
+	
 	
 	public void testCollection() throws ObjectWriteException, ObjectReadException{
 		
@@ -57,7 +92,7 @@ public class TestXMLObjectSerializer extends junit.framework.TestCase{
 		
 		XMLSerializerUtil.write(write, "test.xml");
 		
-		Collection<Integer> read = XMLSerializerUtil.read(write.getClass(), "test.xml");
+		Collection<Integer> read = (Collection<Integer>) XMLSerializerUtil.read("test.xml");
 		assertEquals(write.size(), read.size());
 		assertTrue(write.containsAll(read));
 		assertTrue(read.containsAll(write));
@@ -75,7 +110,7 @@ public class TestXMLObjectSerializer extends junit.framework.TestCase{
 		
 		XMLSerializerUtil.write(write2, "test2.xml");
 		
-		Map<String, Integer> read2 = XMLSerializerUtil.read(write2.getClass(), "test2.xml");
+		Map<String, Integer> read2 = (Map<String, Integer>) XMLSerializerUtil.read("test2.xml");
 		
 		assertEquals(write2.size(), read2.size());
 		assertEquals(write2.get("test"), read2.get("test"));
@@ -90,7 +125,7 @@ public class TestXMLObjectSerializer extends junit.framework.TestCase{
 		
 		TestChild t = new TestXMLObjectSerializer.TestChild();
 		XMLSerializerUtil.write(t, "test3.xml");
-		TestChild r = XMLSerializerUtil.read(t.getClass(), "test3.xml");
+		TestChild r = (TestChild) XMLSerializerUtil.read("test3.xml");
 		assertEquals(t.foo, r.foo);
 		assertEquals(t.number, r.number);
 		
@@ -105,7 +140,7 @@ public class TestXMLObjectSerializer extends junit.framework.TestCase{
 		cyc2.next = cyc;
 		
 		XMLSerializerUtil.write(cyc, "test4.xml");
-		TestCycle cycRead = XMLSerializerUtil.read(TestCycle.class, "test4.xml");
+		TestCycle cycRead = (TestCycle) XMLSerializerUtil.read("test4.xml");
 		assertEquals(cyc.contents, cycRead.contents);
 		assertEquals(cyc2.contents, cycRead.next.contents);
 		assertEquals(cycRead.next.next.contents, cyc.contents);
@@ -115,7 +150,7 @@ public class TestXMLObjectSerializer extends junit.framework.TestCase{
 		
 		TestIgnore ig = new TestIgnore();
 		XMLSerializerUtil.write(ig, "test5.xml");
-		TestIgnore igRead = XMLSerializerUtil.read(TestIgnore.class, "test5.xml");
+		TestIgnore igRead = (TestIgnore) XMLSerializerUtil.read("test5.xml");
 		assertEquals(ig.num, igRead.num);
 		assertEquals(ig.stuff, igRead.stuff);
 		for(int i=0; i<ig.test.length; i++){
@@ -146,7 +181,7 @@ public class TestXMLObjectSerializer extends junit.framework.TestCase{
 		
 		XMLSerializerUtil.write(testTree, "test6.xml");
 		
-		Map<Object, Object> readTree = XMLSerializerUtil.read(Map.class, "test6.xml");
+		Map<Object, Object> readTree = (Map<Object, Object>) XMLSerializerUtil.read("test6.xml");
 		assertEquals(testTree.getClass(), readTree.getClass());
 		assertEquals(testTree.size(), readTree.size());
 		assertEquals(Array.get(testTree.get(key1), 0), Array.get(readTree.get(key1), 0));
@@ -168,14 +203,35 @@ public class TestXMLObjectSerializer extends junit.framework.TestCase{
 		
 		XMLSerializerUtil.serialize(test, new BufferedOutputStream(new FileOutputStream("test7.xml")));
 		
-		Collection<String> in = XMLSerializerUtil.deserialize(
-				Collection.class,
-				new BufferedInputStream(new FileInputStream("test7.xml")));
+		Collection<String> in = (Collection<String>) XMLSerializerUtil.deserialize(new BufferedInputStream(new FileInputStream("test7.xml")));
 		
 		assertEquals(test.size(), in.size());
 		assertEquals(test.getClass(), in.getClass());
 		assertTrue(test.containsAll(in));
 		assertTrue(in.containsAll(test));
+	}
+	
+	public void testCustomReadWrite() throws ObjectWriteException, ObjectReadException{
+		TestReadWriteOverride test = new TestReadWriteOverride();
+		XMLSerializerUtil.write(test, "test8.xml");
+		TestReadWriteOverride read = (TestReadWriteOverride) XMLSerializerUtil.read("test8.xml");
+		assertEquals(test.val, read.val);
+		assertEquals(test.other, read.other);
+		assertEquals(test.stuff, read.stuff);
+	
+	}
+	
+	public void testCustomReadWriteWithInheritance() throws ObjectWriteException, ObjectReadException{
+		TestOverrideChild test = new TestOverrideChild();
+		XMLSerializerUtil.write(test, "test9.xml");
+		TestOverrideChild read = (TestOverrideChild) XMLSerializerUtil.read("test9.xml");
+		assertEquals(test.foo, read.foo);
+		assertEquals(test.other, read.other);
+		assertEquals(test.remember, read.remember);
+		assertEquals(test.stuff, read.stuff);
+		assertEquals(test.val, read.val);
+		assertNull(read.forget);
+		assertEquals(test.forget, "who cares?");
 	}
 	
 	

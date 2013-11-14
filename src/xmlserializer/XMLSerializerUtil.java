@@ -31,6 +31,19 @@ import com.sun.org.apache.xerces.internal.parsers.DOMParser;
  * a work around for these specific cases, not serializing objects with those components, or using the @XMLIgnore
  * annotation.
  * <p>
+ * I have also added support for implementing custom read and write methods to objects. They must follow this exact
+ * signature:
+ * <p>
+ * private void writeObjectXML(WriteField writer) throws ObjectWriteException;
+ * <p>
+ * private void readObjectXML(ReadField reader) throws ObjectReadException;
+ * <p>
+ * The write object method is responsible for writing out the fields you wish to save. The read object method 
+ * is responsible for restoring the object's state from the xml written by your write method.
+ * The Write- and ReadField objects provide methods for writing out or reading in your data fields. Note that if
+ * you implement write object, you should also implement read object or there is a good chance that the default
+ * reading behavior will not be able to successfully restore your object's fields.
+ * <p>
  * Furthermore, while I have tried to test this these methods on a variety of classes, I cannot guarantee that it
  * will work in all cases. If bugs come up, you can try to fix them or let me know, and I will try to fix them. As
  * a further note, I am aware that this class does not contain elegant code. The read and write algorithms are complicated
@@ -136,6 +149,176 @@ public class XMLSerializerUtil {
 	}
 	
 	/**
+	 * This class is used to put fields on the element it is initialized with.
+	 * 
+	 * @author Tristan Bepler
+	 *
+	 */
+	public static class WriteField{
+		private Element cur;
+		private Document doc;
+		private List<Object> written;
+		private WriteField(Element cur, Document doc, List<Object> written){
+			this.cur = cur;
+			this.doc = doc;
+			this.written = written;
+		}
+		private void newChildText(String name, String content){
+			Element e = doc.createElement(name);
+			cur.appendChild(e);
+			e.setTextContent(content);
+		}
+		public void write(String name, boolean value){
+			newChildText(name, String.valueOf(value));
+		}
+		public void write(String name, char value){
+			newChildText(name, String.valueOf(value));
+		}
+		public void write(String name, byte value){
+			newChildText(name, String.valueOf(value));
+		}
+		public void write(String name, short value){
+			newChildText(name, String.valueOf(value));
+		}
+		public void write(String name, int value){
+			newChildText(name, String.valueOf(value));
+		}
+		public void write(String name, long value){
+			newChildText(name, String.valueOf(value));
+		}
+		public void write(String name, float value){
+			newChildText(name, String.valueOf(value));
+		}
+		public void write(String name, double value){
+			newChildText(name, String.valueOf(value));
+		}
+		/**
+		 * Creates a new child node with the given name and uses it to write the given object.
+		 * @param name - name of new child node
+		 * @param value - object to be written
+		 * @throws ObjectWriteException
+		 */
+		public void write(String name, Object value) throws ObjectWriteException{
+			Element child = doc.createElement(name);
+			cur.appendChild(child);
+			fillTreeRecurse(value, child, doc, written);
+		}	
+	}
+	
+	/**
+	 * This class is used to read fields from the element it is initialized with.
+	 * 
+	 * @author Tristan Bepler
+	 *
+	 */
+	public static class ReadField{
+		private Element cur;
+		private List<Element> children;
+		private ClassLoader loader;
+		private Map<Integer, Object> references;
+		private ReadField(Element cur, ClassLoader loader, Map<Integer, Object> references){
+			this.cur = cur;
+			this.loader = loader;
+			this.references = references;
+			this.children = getDirectChildElementsByTag(cur, "*");
+		}
+		private Element getChild(String tag){
+			for(Element e : children){
+				if(e.getNodeName().equals(tag)){
+					return e;
+				}
+			}
+			return null;
+		}
+		/**
+		 * Returns the class of this object
+		 * @return class of object
+		 * @throws ClassNotFoundException
+		 */
+		public Class<?> getObjectClass() throws ClassNotFoundException{
+			if(cur.hasAttribute("classpath")){
+				try{
+					return loader.loadClass(cur.getAttribute("classpath"));
+				} catch(Exception e){
+					return Class.forName(cur.getAttribute("classpath"));
+				}
+			}
+			return null;
+		}
+		public boolean read(String name, boolean def){
+			Element e = getChild(name);
+			if(e!=null){
+				return Boolean.parseBoolean(e.getTextContent());
+			}
+			return def;
+		}
+		public char read(String name, char def){
+			Element e = getChild(name);
+			if(e!=null){
+				return e.getTextContent().charAt(0);
+			}
+			return def;
+		}
+		public byte read(String name, byte def){
+			Element e = getChild(name);
+			if(e!=null){
+				return Byte.parseByte(e.getTextContent());
+			}
+			return def;
+		}
+		public short read(String name, short def){
+			Element e = getChild(name);
+			if(e!=null){
+				return Short.parseShort(e.getTextContent());
+			}
+			return def;
+		}
+		public int read(String name, int def){
+			Element e = getChild(name);
+			if(e!=null){
+				return Integer.parseInt(e.getTextContent());
+			}
+			return def;
+		}
+		public long read(String name, long def){
+			Element e = getChild(name);
+			if(e!=null){
+				return Long.parseLong(e.getTextContent());
+			}
+			return def;
+		}
+		public float read(String name, float def){
+			Element e = getChild(name);
+			if(e!=null){
+				return Float.parseFloat(e.getTextContent());
+			}
+			return def;
+		}
+		public double read(String name, double def){
+			Element e = getChild(name);
+			if(e!=null){
+				return Double.parseDouble(e.getTextContent());
+			}
+			return def;
+		}
+		/**
+		 * Reads the specified node name for an object, returns the default object if no such node exists.
+		 * @param name - name of child node to search
+		 * @param def - default object to return
+		 * @return - the object read from the child node with the given name or the default object if there
+		 * was none
+		 * @throws ObjectReadException
+		 */
+		public Object read(String name, Object def) throws ObjectReadException{
+			Element e = getChild(name);
+			if(e!=null){
+				return readTreeRecurse(e, loader, references);
+			}
+			return def;
+		}
+	}
+	
+	/**
 	 * This method is used to serialize the given object as XML to the given OutputStream. Objects should implement
 	 * the Serializable interface or inherit it from a superclass. Furthermore, as many superclasses and contained
 	 * classes should implement Serializable as possible. If they do not, behavior may be unpredictable. See this
@@ -184,64 +367,111 @@ public class XMLSerializerUtil {
 
 	/**
 	 * This method recursively serializes objects.
+	 * @author Tristan Bepler 
+	 */
+	private static void fillTreeRecurse(Object o, Element parent, Document doc, List<Object> written) throws ObjectWriteException{
+		try{
+			// write nothing if o is null
+			if(o == null){
+				return;
+			}
+			//initialize parent node if uninitialized
+			if(parent == null){
+				parent = doc.createElement(o.getClass().getSimpleName());
+				doc.appendChild(parent);
+			}
+			//set the classpath of this object as an attribute of the node
+			parent.setAttribute("classpath", o.getClass().getName());
+			//simply write the objects value if it is a primitive wrapper
+			if(XMLSerializerUtil.isWrapperType(o.getClass())){
+				parent.setTextContent(String.valueOf(o));
+				return;
+			}
+			//if the object references an object that has already been written, tag it's refId
+			if(written.contains(o)){
+				parent.setAttribute("seeRefId", String.valueOf(written.indexOf(o)));
+				return;
+			}
+			//add this object to the written object array and set its refId
+			written.add(o);
+			parent.setAttribute("refId", String.valueOf(written.indexOf(o)));
+			//special cases
+			if(writeSpecialCaseObjectIsString(o, parent, doc, written)){
+				return;
+			}
+			if(writeSpecialCaseObjectIsClass(o, parent, doc, written)){
+				return;
+			}
+			if(writeSpecialCaseObjectIsMap(o, parent, doc, written)){
+				return;
+			}
+			//if object is an array, have to handle it specially, recursively write array elements
+			if(o.getClass().isArray()){
+				writeArray(o, parent, doc, written);
+				return;
+			}
+			//object is a proper object, check and write its superclass and fill all fields
+			writeObject(o, parent, doc, written);
+		} catch (IllegalArgumentException e){
+			throw new ObjectWriteException(e);
+		} catch (IllegalAccessException e){
+			throw new ObjectWriteException();
+		}
+	}
+	
+	/**
+	 * Writes the object by recursively iterating over its class and superclass fields
+	 * 
 	 * @author Tristan Bepler
 	 */
-	private static void fillTreeRecurse(Object o, Element parent, Document doc, ArrayList<Object> written) throws IllegalArgumentException, IllegalAccessException{
-		// write nothing if o is null
-		if(o == null){
-			return;
-		}
-		//initialize parent node if uninitialized
-		if(parent == null){
-			parent = doc.createElement(o.getClass().getSimpleName());
-			doc.appendChild(parent);
-		}
-		//set the classpath of this object as an attribute of the node
-		parent.setAttribute("classpath", o.getClass().getName());
-		//simply write the objects vale if it is a primitive wrapper
-		if(XMLSerializerUtil.isWrapperType(o.getClass())){
-			parent.setTextContent(String.valueOf(o));
-			return;
-		}
-		//if the object references an object that has already been written, tag it's refId
-		if(written.contains(o)){
-			parent.setAttribute("seeRefId", String.valueOf(written.indexOf(o)));
-			return;
-		}
-		//add this object to the written object array and set its refId
-		written.add(o);
-		parent.setAttribute("refId", String.valueOf(written.indexOf(o)));
-		//special cases
-		if(writeSpecialCaseObjectIsString(o, parent, doc, written)){
-			return;
-		}
-		if(writeSpecialCaseObjectIsClass(o, parent, doc, written)){
-			return;
-		}
-		if(writeSpecialCaseObjectIsMap(o, parent, doc, written)){
-			return;
-		}
-		//if object is an array, have to handle it specially, recursively write array elements
-		if(o.getClass().isArray()){
-			for(int i=0; i<Array.getLength(o); i++){
-				Element entry = doc.createElement("entry");
-				parent.appendChild(entry);
-				entry.setAttribute("index", String.valueOf(i));
-				fillTreeRecurse(Array.get(o, i), entry, doc, written);
-			}
-			return;
-		}
-		//object is a proper object, check and write its superclass and fill all fields
-		List<Class<?>> classes = new ArrayList<Class<?>>();
+	private static void writeObject(Object o, Element parent, Document doc, List<Object> written) throws IllegalAccessException, ObjectWriteException {
+		//init class
 		Class<?> clazz = o.getClass();
-		while(clazz != null){
-			parent.setAttribute("superclass", clazz.getName());
-			classes.add(clazz);
-			clazz = clazz.getSuperclass();
+		//now write the class and superclass fields recursively
+		writeFieldsRecurse(o, parent, doc, written, clazz);
+	}
+	
+	/**
+	 * Recursively writes the fields of this class and its superclasses
+	 * 
+	 * @author Tristan Bepler
+	 */
+	private static void writeFieldsRecurse(Object o, Element parent, Document doc, List<Object> written, Class<?> clazz) throws IllegalAccessException, ObjectWriteException {
+		Element classNode = doc.createElement("classfields");
+		parent.appendChild(classNode);
+		WriteField writer = new WriteField(classNode, doc, written);
+		//check if custom write method defined
+		try {
+			Method write = clazz.getDeclaredMethod("writeObjectXML", WriteField.class);
+			if(write.getExceptionTypes()[0] == ObjectWriteException.class){
+				write.setAccessible(true);
+				write.invoke(o, writer);
+			}
+		}catch (InvocationTargetException e){
+			throw new ObjectWriteException(e);
+		} catch (Exception e){
+			writeFieldDefault(o, clazz, writer);
 		}
-		classes.add(o.getClass());
-		//now write the object's fields recursively
-		for(Field f : getAllFields(classes)){
+		if(!classNode.hasChildNodes()){
+			parent.removeChild(classNode);
+		}
+		clazz = clazz.getSuperclass();
+		if(clazz == null){
+			return;
+		}
+		Element superNode = doc.createElement("superclass");
+		parent.appendChild(superNode);
+		superNode.setAttribute("classpath", clazz.getName());
+		writeFieldsRecurse(o, superNode, doc, written, clazz);
+	}
+	
+	/**
+	 * The default field writing method
+	 * 
+	 * @author Tristan Bepler
+	 */
+	private static void writeFieldDefault(Object o, Class<?> clazz, WriteField writer) throws IllegalAccessException, ObjectWriteException {
+		for(Field f : clazz.getDeclaredFields()){
 			f.setAccessible(true);
 			Object value = f.get(o);
 			//ignore this field if it is null or static and final or annotated by @XMLIgnore
@@ -256,9 +486,21 @@ public class XMLSerializerUtil {
 			}
 			String name = f.getName();
 			name = name.replace('$', REPLACEMENT_MAP.get('$'));
-			Element field = doc.createElement(name);
-			parent.appendChild(field);
-			fillTreeRecurse(value, field, doc, written);
+			writer.write(name, value);
+		}
+	}
+	
+	/**
+	 * Writes array by iterating over the elements
+	 * 
+	 * @author Tristan Bepler
+	 */
+	private static void writeArray(Object o, Element parent, Document doc, List<Object> written) throws IllegalAccessException, ArrayIndexOutOfBoundsException, IllegalArgumentException, ObjectWriteException {
+		for(int i=0; i<Array.getLength(o); i++){
+			Element entry = doc.createElement("entry");
+			parent.appendChild(entry);
+			entry.setAttribute("index", String.valueOf(i));
+			fillTreeRecurse(Array.get(o, i), entry, doc, written);
 		}
 	}
 
@@ -278,7 +520,7 @@ public class XMLSerializerUtil {
 	 * Method for handling serialization of String objects.
 	 * @author Tristan Bepler
 	 */
-	private static boolean writeSpecialCaseObjectIsString(Object o, Element cur, Document doc, ArrayList<Object> written){
+	private static boolean writeSpecialCaseObjectIsString(Object o, Element cur, Document doc, List<Object> written){
 		if(o instanceof String){
 			cur.setTextContent((String) o);
 			return true;
@@ -290,8 +532,8 @@ public class XMLSerializerUtil {
 	 * Method for handling deserialization of String objects.
 	 * @author Tristan Bepler
 	 */
-	private static Object readSpecialCaseObjectIsString(Class<?> clazz, Element cur, Map<Integer, Object> references){
-		if(String.class == clazz){
+	private static String readSpecialCaseObjectIsString(Class<?> clazz, Element cur){
+		if(clazz == String.class){
 			return cur.getTextContent();
 		}
 		return null;
@@ -301,7 +543,7 @@ public class XMLSerializerUtil {
 	 * Method for handling serialization of class objects.
 	 * @author Tristan Bepler
 	 */
-	private static boolean writeSpecialCaseObjectIsClass(Object o, Element cur, Document doc, ArrayList<Object> written){
+	private static boolean writeSpecialCaseObjectIsClass(Object o, Element cur, Document doc, List<Object> written){
 		if(o instanceof Class){
 			cur.setTextContent(((Class)o).getName());
 			return true;
@@ -313,7 +555,7 @@ public class XMLSerializerUtil {
 	 * Method for handling deserialization of class objects.
 	 * @author Tristan Bepler
 	 */
-	private static Object readSpecialCaseObjectIsClass(Class<?> clazz, Element cur, ClassLoader loader, Map<Integer, Object>references) throws ClassNotFoundException{
+	private static Object readSpecialCaseObjectIsClass(Class<?> clazz, Element cur, ClassLoader loader) throws ClassNotFoundException{
 		if(Class.class == clazz){
 			if(PRIMITIVE_CLASSES.containsKey(cur.getTextContent())){
 				return PRIMITIVE_CLASSES.get(cur.getTextContent());
@@ -329,20 +571,17 @@ public class XMLSerializerUtil {
 
 	/**
 	 * Method for handling serialization of map objects. Maps were very verbose before.
-	 * @author Tristan Bepler
+	 * @author Tristan Bepler 
 	 */
-	private static boolean writeSpecialCaseObjectIsMap(Object o, Element cur, Document doc, ArrayList<Object> written) throws IllegalArgumentException, IllegalAccessException {
+	private static boolean writeSpecialCaseObjectIsMap(Object o, Element cur, Document doc, List<Object> written) throws IllegalArgumentException, IllegalAccessException, ObjectWriteException {
 		if(o instanceof Map){
 			Map map = (Map) o;
 			for(Object key : map.keySet()){
 				Element entry = doc.createElement("entry");
 				cur.appendChild(entry);
-				Element k = doc.createElement("key");
-				entry.appendChild(k);
-				fillTreeRecurse(key, k, doc, written);
-				Element v = doc.createElement("value");
-				entry.appendChild(v);
-				fillTreeRecurse(map.get(key), v, doc, written);
+				WriteField writer = new WriteField(entry, doc, written);
+				writer.write("key", key);
+				writer.write("value", map.get(key));
 			}
 			return true;
 		}
@@ -353,45 +592,18 @@ public class XMLSerializerUtil {
 	 * This method handled deserialization of map objects.
 	 * @author Tristan Bepler
 	 */
-	private static Object readSpecialCaseObjectIsMap(Class<?> clazz, Element cur, ClassLoader loader, Map<Integer, Object> references) throws Exception{
+	private static Map readSpecialCaseObjectIsMap(Class<?> clazz, Element cur, ClassLoader loader, Map<Integer, Object> references) throws Exception{
 		if(Map.class.isAssignableFrom(clazz)){
 			try{
-				Class<? extends Map> c = (Class<? extends Map>) loader.loadClass(cur.getAttribute("classpath"));
-				Constructor con = c.getConstructor();
+				Constructor con = clazz.getConstructor();
 				con.setAccessible(true);
 				Map map = (Map) con.newInstance();
-				if(cur.hasAttribute("refId")){
-					int id = Integer.parseInt(cur.getAttribute("refId").trim());
-					references.put(id, map);
-				}
+				addReference(cur, references, map);
 				List<Element> entries = getDirectChildElementsByTag(cur, "entry");
 				for(Element entry: entries){
-					Element k = getDirectChildElementsByTag(entry, "key").get(0);
-					Object key;
-					if(!k.hasAttribute("classpath")){
-						key = null;
-					}else{
-						Class<?> keyClass;
-						try{
-							keyClass = loader.loadClass(k.getAttribute("classpath"));
-						}catch(Exception e){
-							keyClass = Class.forName(k.getAttribute("classpath"));
-						}
-						key = readTreeRecurse(keyClass, k, loader, references);
-					}
-					Element v = getDirectChildElementsByTag(entry, "value").get(0);
-					Object value;
-					if(!v.hasAttribute("classpath")){
-						value = null;
-					}else{
-						Class<?> valueClass;
-						try{
-							valueClass = loader.loadClass(v.getAttribute("classpath"));
-						}catch(Exception e){
-							valueClass = Class.forName(v.getAttribute("classpath"));
-						}
-						value = readTreeRecurse(valueClass, v, loader, references);
-					}
+					ReadField reader = new ReadField(entry, loader, references);
+					Object key = reader.read("key", null);
+					Object value = reader.read("value", null);
 					map.put(key, value);
 				}
 				return map;
@@ -403,64 +615,54 @@ public class XMLSerializerUtil {
 	}
 	
 	/**
-	 * This method is used to deserialize a previously XML serialized object from the given InputStream. The class
-	 * of the object that should be returned is specified by the clazz parameter. The ClassLoader will be used to
-	 * retrieve the classes required for object instantiation. This is to allow loading of classes from external sources
-	 * if necessary. See this classes description for more information on object serialization and deserialization.
-	 * {@link XMLSerializerUtil}
-	 * @param <T> - the type of the object that will be returned
-	 * @param clazz - the class of the object to be deserialized
+	 * This method is used to deserialize a previously XML serialized object from the given InputStream. The ClassLoader
+	 * will be used to retrieve the classes required for object instantiation. This is to allow loading of classes
+	 * from external sources if necessary. See this classes description for more information on object serialization
+	 * and deserialization.{@link XMLSerializerUtil}
 	 * @param in - the InputStream the object will be deserialized from
 	 * @param loader - a ClassLoader that will be used to load Class objects
 	 * @return - the deserialized object
 	 * @throws ObjectReadException
 	 * @author Tristan Bepler
 	 */
-	public static <T> T deserialize(Class<T> clazz, InputStream in, ClassLoader loader) throws ObjectReadException{
+	public static Object deserialize(InputStream in, ClassLoader loader) throws ObjectReadException{
 		try {
 			DOMParser parser = new DOMParser();
 			parser.parse(new InputSource(in));
 			Document doc = parser.getDocument();
 			doc.getDocumentElement().normalize();
-			T readObject = readTreeRecurse(clazz, doc.getDocumentElement(), loader, new HashMap<Integer, Object>());
-			return readObject;
+			return readTreeRecurse(doc.getDocumentElement(), loader, new HashMap<Integer, Object>());
 		} catch (Exception e) {
 			throw new ObjectReadException(e);
 		}
 	}
 	
 	/**
-	 * This method is used to deserialize a previously XML serialized object from the given InputStream. The class
-	 * of the object that should be returned is specified by the clazz parameter. See this classes description for
-	 * more information on object serialization and deserialization.{@link XMLSerializerUtil}
-	 * @param <T> - the type of the object that will be returned
-	 * @param clazz - the class of the object to be deserialized
+	 * This method is used to deserialize a previously XML serialized object from the given InputStream. See this
+	 * classes description for more information on object serialization and deserialization.{@link XMLSerializerUtil}
 	 * @param in - the InputStream the object will be deserialized from
 	 * @return - the deserialized object
 	 * @throws ObjectReadException
 	 * @author Trisan Bepler
 	 */
-	public static <T> T deserialize(Class<T> clazz, InputStream in) throws ObjectReadException{
-		return deserialize(clazz, in, ClassLoader.getSystemClassLoader());
+	public static Object deserialize(InputStream in) throws ObjectReadException{
+		return deserialize(in, ClassLoader.getSystemClassLoader());
 	}
 
 	/**
-	 * This method is used to deserialize a previously serialized object from the XML file it was written to. The class
-	 * of the object that should be returned is specified by the clazz parameter. The ClassLoader will be used to
-	 * retrieve the classes required for object instantiation. This is to allow loading of classes from external sources
-	 * if necessary. See this classes description for more information on object serialization and deserialization.
-	 * {@link XMLSerializerUtil}
-	 * @param <T> - the type of the object that will be returned
-	 * @param clazz - the class of the object to be deserialized
+	 * This method is used to deserialize a previously serialized object from the XML file it was written to. The
+	 * ClassLoader will be used to retrieve the classes required for object instantiation. This is to allow loading
+	 * of classes from external sources if necessary. See this classes description for more information on object
+	 * serialization and deserialization.{@link XMLSerializerUtil}
 	 * @param file - the file containing the object XML
 	 * @param loader - a ClassLoader that will be used to load Class objects.
 	 * @return - the deserialized object
 	 * @throws ObjectReadException
 	 * @author Tristan Bepler
 	 */
-	public static <T> T read(Class<T> clazz, String file, ClassLoader loader) throws ObjectReadException{
+	public static Object read(String file, ClassLoader loader) throws ObjectReadException{
 		try {
-			return deserialize(clazz, new BufferedInputStream(new FileInputStream(file)), loader);
+			return deserialize(new BufferedInputStream(new FileInputStream(file)), loader);
 		} catch (Exception e) {
 			throw new ObjectReadException(e);
 		}
@@ -468,148 +670,78 @@ public class XMLSerializerUtil {
 	}
 
 	/**
-	 * This method is used to deserialize and object from its serialized object XML. The class of the object is specified
-	 * by the clazz parameter. The path of the file the object should be deserialized from is specified by the file 
-	 * parameter. See this classes description for more information about object serialization and deserialization.
-	 * {@link XMLSerializerUtil}
-	 * @param <T> - the type of the object that will be returned
-	 * @param clazz - the class of the object to be deserialized
+	 * This method is used to deserialize and object from its serialized object XML. The path of the file the object
+	 * should be deserialized from is specified by the file parameter. See this classes description for more
+	 * information about object serialization and deserialization.{@link XMLSerializerUtil}
 	 * @param file - the file containing the object XML
 	 * @return - the deserialized object
 	 * @throws ObjectReadException
 	 * @author Tristan Bepler
 	 */
-	public static <T> T read(Class<T> clazz, String file) throws ObjectReadException{
-		return read(clazz, file, ClassLoader.getSystemClassLoader());
+	public static Object read(String file) throws ObjectReadException{
+		return read(file, ClassLoader.getSystemClassLoader());
 	}
 
 	/**
 	 * This method recursively deserializes objects
 	 * @author Tristan Bepler
 	 */
-	private static <T,S extends T> S readTreeRecurse(Class<T> clazz, Element cur, ClassLoader loader, Map<Integer, Object> references) throws ObjectReadException{
-		//if cur is null return null
-		if(cur == null){
-			return null;
-		}
-		//if cur is already written elswhere, read it from it's reference
-		if(cur.hasAttribute("seeRefId")){
-			int refId = Integer.parseInt(cur.getAttribute("seeRefId"));
-			try{
-				Object reference = references.get(refId);
-				return (S) reference;
-			} catch(Exception e){
-				throw new ObjectReadException("Error: could find reference object");
+	private static Object readTreeRecurse(Element cur, ClassLoader loader, Map<Integer, Object> references) throws ObjectReadException{
+		try{
+			//if cur is null return null
+			if(cur == null){
+				return null;
 			}
-		}
-		//if cur represents a primitive type, parse and return it
-		if(clazz.isPrimitive()){
-			try {
-				return (S) toObject(clazz, cur.getTextContent().trim());
-			}catch(Exception e){
-				throw new ObjectReadException(e);
+			//if cur is already written elswhere, read it from it's reference
+			if(cur.hasAttribute("seeRefId")){
+				int refId = Integer.parseInt(cur.getAttribute("seeRefId"));
+				try{
+					return references.get(refId);
+				} catch(Exception e){
+					throw new ObjectReadException("Error: could find reference object");
+				}
 			}
-		}
-		//if cur has no classpath specified, return null
-		if(!cur.hasAttribute("classpath")){
-			return null;
-		}
-		try {
+			//if cur has no classpath specified, return null
+			if(!cur.hasAttribute("classpath")){
+				return null;
+			}
 			//get the class of cur
-			Class<S> c;
+			Class<?> c;
 			try{
-				c = (Class<S>) loader.loadClass(cur.getAttribute("classpath"));
+				c = (Class<?>) loader.loadClass(cur.getAttribute("classpath"));
 			} catch(Exception e){
-				c = (Class<S>) Class.forName(cur.getAttribute("classpath"));
-			}
-			//if class of cur does not extend desired class, throw error
-			if(!clazz.isAssignableFrom(c)){
-				throw new ObjectReadException("Error: class \""+clazz.getName()+"\" cannot be assigned from class \""+c.getName()+"\"");
+				c = (Class<?>) Class.forName(cur.getAttribute("classpath"));
 			}
 			//if cur is a wrapper type, parse and return it
 			if(isWrapperType(c)){
-				return (S) toObject(c, cur.getTextContent().trim());
+				return toObject(c, cur.getTextContent().trim());
 			}
-			//secial case, if cur is a string return it
-			Object string = readSpecialCaseObjectIsString(c, cur, references);
-			if(string != null){
-				if(cur.hasAttribute("refId")){
-					int id = Integer.parseInt(cur.getAttribute("refId"));
-					references.put(id, string);
-				}
-				return (S) string;
-			}
-			Object isClass = readSpecialCaseObjectIsClass(c, cur, loader, references);
+			//if cur is an instance of the Class class
+			Object isClass = readSpecialCaseObjectIsClass(c, cur, loader);
 			if(isClass != null){
-				if(cur.hasAttribute("refId")){
-					int id = Integer.parseInt(cur.getAttribute("refId"));
-					references.put(id, string);
-				}
-				return (S) isClass;
+				addReference(cur, references, isClass);
+				return isClass;
+			}			
+			//special case, if cur is a string return it
+			Object isString = readSpecialCaseObjectIsString(c, cur);
+			if(isString != null){
+				addReference(cur, references, isString);
+				return isString;
 			}
+			//special case, if cur is a map return it
 			Object isMap = readSpecialCaseObjectIsMap(c, cur, loader, references);
 			if(isMap != null){
-				return (S) isMap;
+				return isMap;
 			}
 			//if cur is an array, instantiate it and recursively build its elements
 			if(c.isArray()){
-				Class<?> type = c.getComponentType();
-				List<Element> children = getDirectChildElementsByTag(cur, "entry");
-				S readArray = (S) Array.newInstance(type, children.size());
-				if(cur.hasAttribute("refId")){
-					int id = Integer.parseInt(cur.getAttribute("refId"));
-					references.put(id, readArray);
-				}
-				for(int i=0; i<children.size(); i++){
-					Element entry = (Element) children.get(i);
-					int index = Integer.parseInt(entry.getAttribute("index"));
-					Array.set(readArray, index, readTreeRecurse(type, entry, loader, references));
-				}
-				return readArray;
+				return readArray(c, cur, loader, references);
 			}
-			//check what cur's superclass is and get all parent classes
-			Class<? super S> sup = (Class<? super S>) Class.forName(cur.getAttribute("superclass"));
-			List<Class<?>> classes = new ArrayList<Class<?>>();
-			Class<?> curClass = c;
-			while(curClass != sup){
-				classes.add(curClass);
-				curClass = curClass.getSuperclass();
-			}
-			classes.add(sup);
 			//create object using constructor of its highest level superclass not implementing serializable
-			S readObject = SilentObjectCreator.create(c, sup);
-			if(cur.hasAttribute("refId")){
-				int id = Integer.parseInt(cur.getAttribute("refId"));
-				references.put(id, readObject);
-			}
-			//fill all fields recursively
-			for(Field f : getAllFields(classes)){
-				f.setAccessible(true);
-				//if field is final static or transient, ignore
-				if(Modifier.isStatic(f.getModifiers())&&Modifier.isFinal(f.getModifiers())){
-					continue;
-				}
-				//if field is annoted with @XMLIgnore, ignore
-				if(f.isAnnotationPresent(XMLIgnore.class)){
-					continue;
-				}
-				//if field is final, remove final modifier
-				if(Modifier.isFinal(f.getModifiers())){
-					Field mods = Field.class.getDeclaredField("modifiers");
-					mods.setAccessible(true);
-					mods.setInt(f, f.getModifiers() & ~Modifier.FINAL);
-				}
-				String name = f.getName();
-				name = name.replace('$', REPLACEMENT_MAP.get('$'));
-				List<Element> field = getDirectChildElementsByTag(cur, name);
-				if(field.isEmpty()){
-					f.set(readObject, null);
-				}else{
-					Element child = getDirectChildElementsByTag(cur, name).get(0);
-					Class<?> type = f.getType();
-					f.set(readObject, readTreeRecurse(type, child, loader, references));
-				}
-			}
+			Object readObject = SilentObjectCreator.create(c);
+			//add object to the references map
+			addReference(cur, references, readObject);
+			readFieldsRecurse(readObject, cur, loader, references, c);
 			return readObject;
 
 		} catch (Exception e) {
@@ -617,6 +749,112 @@ public class XMLSerializerUtil {
 		}
 
 
+	}
+	
+	
+	/**
+	 * Fills this class and super classes' fields recursively.
+	 * 
+	 * @author Tristan Bepler
+	 */
+	private static void readFieldsRecurse(Object readObject, Element cur, ClassLoader loader, Map<Integer, Object> references, Class<?> clazz) throws ObjectReadException, NoSuchFieldException, IllegalAccessException {
+		if(hasChild(cur, "classfields")){
+			Element classNode = getDirectChildElementsByTag(cur, "classfields").get(0);
+			//check if custom read method defined
+			try {
+				Method read = clazz.getDeclaredMethod("readObjectXML", ReadField.class);
+				if(read.getExceptionTypes()[0] == ObjectReadException.class){
+					ReadField reader = new ReadField(classNode, loader, references);
+					read.setAccessible(true);
+					read.invoke(readObject, reader);
+				}
+			} catch (InvocationTargetException e){
+				throw new ObjectReadException(e);
+			} catch (Exception e){
+				//try default
+				readFieldsDefault(classNode, loader, references, readObject, clazz);
+			}
+		}
+		//fill superclass fields recursively
+		clazz = clazz.getSuperclass();
+		if(clazz == null){
+			return;
+		}
+		Element superNode = getDirectChildElementsByTag(cur, "superclass").get(0);
+		readFieldsRecurse(readObject, superNode, loader, references, clazz);
+	}
+	
+	/**
+	 * Iterates over and fills all the object's fields
+	 * 
+	 * @author Tristan Bepler
+	 */
+	private static void readFieldsDefault(Element cur, ClassLoader loader, Map<Integer, Object> references, Object readObject, Class<?> clazz) throws NoSuchFieldException, IllegalAccessException, ObjectReadException {
+		for(Field f : clazz.getDeclaredFields()){
+			f.setAccessible(true);
+			//if field is final static or transient, ignore
+			if(Modifier.isStatic(f.getModifiers())&&Modifier.isFinal(f.getModifiers())){
+				continue;
+			}
+			//if field is annoted with @XMLIgnore, ignore
+			if(f.isAnnotationPresent(XMLIgnore.class)){
+				continue;
+			}
+			//if field is final, remove final modifier
+			if(Modifier.isFinal(f.getModifiers())){
+				Field mods = Field.class.getDeclaredField("modifiers");
+				mods.setAccessible(true);
+				mods.setInt(f, f.getModifiers() & ~Modifier.FINAL);
+			}
+			String name = f.getName();
+			name = name.replace('$', REPLACEMENT_MAP.get('$'));
+			ReadField reader = new ReadField(cur, loader, references);
+			f.set(readObject, reader.read(name, null));
+		}
+	}
+	
+	/**
+	 * Returns a list of classes containing the class of the object and all its super classes
+	 * 
+	 * @author Tristan Bepler
+	 */
+	private static List<Class<?>> getSupers(Object o) {
+		List<Class<?>> classes = new ArrayList<Class<?>>();
+		Class<?> curClass = o.getClass();
+		while(curClass != null){
+			classes.add(curClass);
+			curClass = curClass.getSuperclass();
+		}
+		return classes;
+	}
+	
+	/**
+	 * Builds the array by iterating over its elements
+	 * 
+	 * @author Tristan Bepler
+	 */
+	private static Object readArray(Class<?> c, Element cur, ClassLoader loader, Map<Integer, Object> references) throws ObjectReadException {
+		List<Element> children = getDirectChildElementsByTag(cur, "entry");
+		Object readArray = Array.newInstance(c.getComponentType(), children.size());
+		addReference(cur, references, readArray);
+		for(Element entry : children){
+			int index = Integer.parseInt(entry.getAttribute("index"));
+			Array.set(readArray, index, readTreeRecurse(entry, loader, references));
+		}
+		return readArray;
+	}
+	
+	
+	/**
+	 * Adds a reference for the given object to the references map if it has a refId
+	 *
+	 * @author Tristan Bepler
+	 */
+	private static void addReference(Element cur, Map<Integer, Object> references, Object o) {
+		if(cur.hasAttribute("refId")){
+			int id = Integer.parseInt(cur.getAttribute("refId"));
+			references.put(id, o);
+		}
 	}
 
 	/**
@@ -630,12 +868,28 @@ public class XMLSerializerUtil {
 		List<Element> children = new ArrayList<Element>();
 		Node child = node.getFirstChild();
 		while(child!=null){
-			if(child.getNodeType() == Node.ELEMENT_NODE && child.getNodeName().equals(tag)){
+			if(child.getNodeType() == Node.ELEMENT_NODE && (child.getNodeName().equals(tag) || tag.equals("*"))){
 				children.add((Element) child);
 			}
 			child = child.getNextSibling();
 		}
 		return children;
+	}
+	
+	/**
+	 * This method checks whether the given element node has a child element with the given name.
+	 * @param node - parent to check
+	 * @param name - name of child
+	 * @return - true if parent has a child with the given name, false otherwise
+	 */
+	public static boolean hasChild(Element node, String name){
+		List<Element> children = getDirectChildElementsByTag(node, "*");
+		for(Element e : children){
+			if(e.getNodeName().equals(name)){
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
