@@ -21,7 +21,7 @@ public class Parser {
         jsonObject = new JSONObject(constructJSONString());
     }
 
-    public String constructJSONString () {
+    private String constructJSONString () {
         String returnString = "";
         while (scanner.hasNextLine()) {
             returnString = returnString + scanner.nextLine();
