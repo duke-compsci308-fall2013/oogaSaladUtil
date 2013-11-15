@@ -42,10 +42,10 @@ import com.sun.org.apache.xerces.internal.parsers.DOMParser;
  * private void readObjectXML(ReadField reader) throws ObjectReadException;
  * <p>
  * The write object method is responsible for writing out the fields you wish to save. The read object method 
- * is responsible for restoring the object's state from the xml written by your write method.
- * The Write- and ReadField objects provide methods for writing out or reading in your data fields. Note that if
- * you implement write object, you should also implement read object or there is a good chance that the default
- * reading behavior will not be able to successfully restore your object's fields.
+ * is responsible for restoring the object's state from the xml written by your write method. These methods are only responsible
+ * for your object's fields, not any superclass's fields. The Write- and ReadField objects provide methods for writing out
+ * or reading in your data fields. Note that if you implement write object, you should also implement read object or there is
+ * a good chance that the default reading behavior will not be able to successfully restore your object's fields.
  * <p>
  * Furthermore, while I have tried to test this these methods on a variety of classes, I cannot guarantee that it
  * will work in all cases. If bugs come up, you can try to fix them or let me know, and I will try to fix them. As
@@ -79,6 +79,7 @@ import com.sun.org.apache.xerces.internal.parsers.DOMParser;
  * 
  * @author Tristan Bepler
  * @author Alex Song
+ * @version 1.1
  * 
  * @see Serializable
  * @see TestXMLObjectSerializer
