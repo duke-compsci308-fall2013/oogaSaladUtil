@@ -7,6 +7,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.Serializable;
 import java.lang.reflect.*;
 import java.util.*;
 
@@ -25,11 +26,13 @@ import com.sun.org.apache.xerces.internal.parsers.DOMParser;
 
 /**
  * This class can be used to serialize objects as XML to files or OutputStreams and deserialize objects from those XML
- * files or InputStreams, in a manner similar to how java serialization works. It works for almost all objects, but
- * there are a few objects that cannot be instantiated due to java's internal security. I included a work around for
- * instantiating Class objects, but there may be others that can not be deserialized properly. I would advise adding
- * a work around for these specific cases, not serializing objects with those components, or using the @XMLIgnore
- * annotation.
+ * files or InputStreams, in a manner similar to how java serialization works. Objects you wish to serialize should implement
+ * the {@link Serializable} interface. There are also a few objects that cannot be instantiated due to java's internal security.
+ * I included a work around for instantiating Class objects, but there may be others that can not be deserialized properly.
+ * Furthermore, if your object contains objects that do not implement Serializable, those objects must have a public or protected
+ * default constructor available to initialize their state. I would advise making all contents serializable,
+ * not serializing objects with those components, using the @{@link XMLIgnore} annotation to ignore those fields, or defining
+ * custom read and write methods for your object. 
  * <p>
  * I have also added support for implementing custom read and write methods to objects. They must follow this exact
  * signature:
@@ -49,16 +52,24 @@ import com.sun.org.apache.xerces.internal.parsers.DOMParser;
  * a further note, I am aware that this class does not contain elegant code. The read and write algorithms are complicated
  * and functionality is the priority.
  * <p>
- * This class also relies on the SilentObjectCreator to get the SerializationConstructor that is used to construct
+ * This class relies on the SilentObjectCreator to get the SerializationConstructor that is used to construct
  * the read objects without invoking their constructors. This means that the SilentObjectCreator must use the sun.reflect
  * package and, therefore, could be broken in future Java versions. It also means that each object you wish to serialize
  * to XML using this class should implement the Serializable interface or inherit it from a superclass. Any objects it
  * contains and its superclasses should also implement Serializable whenever possible. Output may be unpredictable 
  * if this is not the case.
  * <p>
+ * To allow subtypes of non-serializable classes to be serialized, the subtype may assume responsibility for saving and
+ * restoring the state of the supertype's public, protected, and (if accessible) package fields. The subtype may assume
+ * this responsibility only if the class it extends has an accessible no-arg constructor to initialize the class's state.
+ * It is an error to declare a class Serializable in this case. The error will be detected at runtime. During deserialization,
+ * the fields of non-serializable classes will be initialized using the public or protected no-arg constructor of the class.
+ * A no-arg constructor must be accessible to the subclass that is serializable. The fields of serializable subclasses will
+ * be restored from the stream
+ * <p>
  * Finally, several objects are constructed using special cases, this is either to prevent security exceptions, as is
  * the case for the Class class, or to make their outputs less verbose, as is the case for Strings and Maps. I have
- * included test cases in TestXMLObjectSerializer.java that should help illustrate the usage of this class.
+ * included test cases in {@link TestXMLObjectSerializer} that should help illustrate the usage of this class.
  * {@author Tristan Bepler}
  * <p>
  * The method formatXML has been added to create indentations for better readability, and also to omit the XML declaration
@@ -68,15 +79,37 @@ import com.sun.org.apache.xerces.internal.parsers.DOMParser;
  * 
  * @author Tristan Bepler
  * @author Alex Song
+ * 
+ * @see Serializable
+ * @see TestXMLObjectSerializer
+ * @see XMLIgnore
  *
  */
 
 public class XMLSerializerUtil {
 
-	public static final Map<Class<?>, Class<?>> WRAPPER_TYPES = getWrapperTypes();
+	private static final String DOM_WILDCARD = "*";
+	private static final String MODIFIERS = "modifiers";
 
-	public static final Map<Character, Character> REPLACEMENT_MAP = replacementMap();
-	public static final Map<String, Class<?>> PRIMITIVE_CLASSES = primitiveClasses();
+	private static final String CUSTOM_READ = "readObjectXML";
+	private static final String CUSTOM_WRITE = "writeObjectXML";
+
+	private static final String VALUE = "value";
+	private static final String KEY = "key";
+	private static final String INDEX = "index";
+	private static final String ENTRY = "entry";
+
+	private static final String CLASSPATH = "classpath";
+	private static final String SUPERCLASS = "superclass";
+	private static final String CLASSFIELDS = "fields";
+
+	private static final String REF_ID = "refId";
+	private static final String SEE_REF_ID = "seeRefId";
+
+	private static final Map<Class<?>, Class<?>> WRAPPER_TYPES = getWrapperTypes();
+
+	private static final Map<Character, Character> REPLACEMENT_MAP = replacementMap();
+	private static final Map<String, Class<?>> PRIMITIVE_CLASSES = primitiveClasses();
 
 	public static boolean isWrapperType(Class<?> clazz){
 		return WRAPPER_TYPES.values().contains(clazz);
@@ -220,7 +253,7 @@ public class XMLSerializerUtil {
 			this.cur = cur;
 			this.loader = loader;
 			this.references = references;
-			this.children = getDirectChildElementsByTag(cur, "*");
+			this.children = getDirectChildElementsByTag(cur, DOM_WILDCARD);
 		}
 		private Element getChild(String tag){
 			for(Element e : children){
@@ -236,11 +269,11 @@ public class XMLSerializerUtil {
 		 * @throws ClassNotFoundException
 		 */
 		public Class<?> getObjectClass() throws ClassNotFoundException{
-			if(cur.hasAttribute("classpath")){
+			if(cur.hasAttribute(CLASSPATH)){
 				try{
-					return loader.loadClass(cur.getAttribute("classpath"));
+					return loader.loadClass(cur.getAttribute(CLASSPATH));
 				} catch(Exception e){
-					return Class.forName(cur.getAttribute("classpath"));
+					return Class.forName(cur.getAttribute(CLASSPATH));
 				}
 			}
 			return null;
@@ -381,7 +414,7 @@ public class XMLSerializerUtil {
 				doc.appendChild(parent);
 			}
 			//set the classpath of this object as an attribute of the node
-			parent.setAttribute("classpath", o.getClass().getName());
+			parent.setAttribute(CLASSPATH, o.getClass().getName());
 			//simply write the objects value if it is a primitive wrapper
 			if(XMLSerializerUtil.isWrapperType(o.getClass())){
 				parent.setTextContent(String.valueOf(o));
@@ -389,12 +422,12 @@ public class XMLSerializerUtil {
 			}
 			//if the object references an object that has already been written, tag it's refId
 			if(written.contains(o)){
-				parent.setAttribute("seeRefId", String.valueOf(written.indexOf(o)));
+				parent.setAttribute(SEE_REF_ID, String.valueOf(written.indexOf(o)));
 				return;
 			}
 			//add this object to the written object array and set its refId
 			written.add(o);
-			parent.setAttribute("refId", String.valueOf(written.indexOf(o)));
+			parent.setAttribute(REF_ID, String.valueOf(written.indexOf(o)));
 			//special cases
 			if(writeSpecialCaseObjectIsString(o, parent, doc, written)){
 				return;
@@ -437,12 +470,23 @@ public class XMLSerializerUtil {
 	 * @author Tristan Bepler
 	 */
 	private static void writeFieldsRecurse(Object o, Element parent, Document doc, List<Object> written, Class<?> clazz) throws IllegalAccessException, ObjectWriteException {
-		Element classNode = doc.createElement("classfields");
+		if(!Serializable.class.isAssignableFrom(clazz)){
+			try {
+				Constructor con = clazz.getDeclaredConstructor();
+				if(con.getModifiers() != Modifier.PUBLIC && con.getModifiers() != Modifier.PROTECTED){
+					throw new ObjectWriteException("Non-serializable class \""+clazz+"\" does not have a public or protected default constructor.");
+				}
+			} catch (Exception e){
+				throw new ObjectWriteException("Non-serializable class \""+clazz+"\" does not have a public or protected default constructor.");
+			}
+			return;
+		}
+		Element classNode = doc.createElement(CLASSFIELDS);
 		parent.appendChild(classNode);
 		WriteField writer = new WriteField(classNode, doc, written);
 		//check if custom write method defined
 		try {
-			Method write = clazz.getDeclaredMethod("writeObjectXML", WriteField.class);
+			Method write = clazz.getDeclaredMethod(CUSTOM_WRITE, WriteField.class);
 			if(write.getExceptionTypes()[0] == ObjectWriteException.class){
 				write.setAccessible(true);
 				write.invoke(o, writer);
@@ -459,9 +503,9 @@ public class XMLSerializerUtil {
 		if(clazz == null){
 			return;
 		}
-		Element superNode = doc.createElement("superclass");
+		Element superNode = doc.createElement(SUPERCLASS);
 		parent.appendChild(superNode);
-		superNode.setAttribute("classpath", clazz.getName());
+		superNode.setAttribute(CLASSPATH, clazz.getName());
 		writeFieldsRecurse(o, superNode, doc, written, clazz);
 	}
 	
@@ -497,9 +541,9 @@ public class XMLSerializerUtil {
 	 */
 	private static void writeArray(Object o, Element parent, Document doc, List<Object> written) throws IllegalAccessException, ArrayIndexOutOfBoundsException, IllegalArgumentException, ObjectWriteException {
 		for(int i=0; i<Array.getLength(o); i++){
-			Element entry = doc.createElement("entry");
+			Element entry = doc.createElement(ENTRY);
 			parent.appendChild(entry);
-			entry.setAttribute("index", String.valueOf(i));
+			entry.setAttribute(INDEX, String.valueOf(i));
 			fillTreeRecurse(Array.get(o, i), entry, doc, written);
 		}
 	}
@@ -577,11 +621,11 @@ public class XMLSerializerUtil {
 		if(o instanceof Map){
 			Map map = (Map) o;
 			for(Object key : map.keySet()){
-				Element entry = doc.createElement("entry");
+				Element entry = doc.createElement(ENTRY);
 				cur.appendChild(entry);
 				WriteField writer = new WriteField(entry, doc, written);
-				writer.write("key", key);
-				writer.write("value", map.get(key));
+				writer.write(KEY, key);
+				writer.write(VALUE, map.get(key));
 			}
 			return true;
 		}
@@ -599,11 +643,11 @@ public class XMLSerializerUtil {
 				con.setAccessible(true);
 				Map map = (Map) con.newInstance();
 				addReference(cur, references, map);
-				List<Element> entries = getDirectChildElementsByTag(cur, "entry");
+				List<Element> entries = getDirectChildElementsByTag(cur, ENTRY);
 				for(Element entry: entries){
 					ReadField reader = new ReadField(entry, loader, references);
-					Object key = reader.read("key", null);
-					Object value = reader.read("value", null);
+					Object key = reader.read(KEY, null);
+					Object value = reader.read(VALUE, null);
 					map.put(key, value);
 				}
 				return map;
@@ -693,8 +737,8 @@ public class XMLSerializerUtil {
 				return null;
 			}
 			//if cur is already written elswhere, read it from it's reference
-			if(cur.hasAttribute("seeRefId")){
-				int refId = Integer.parseInt(cur.getAttribute("seeRefId"));
+			if(cur.hasAttribute(SEE_REF_ID)){
+				int refId = Integer.parseInt(cur.getAttribute(SEE_REF_ID));
 				try{
 					return references.get(refId);
 				} catch(Exception e){
@@ -702,15 +746,15 @@ public class XMLSerializerUtil {
 				}
 			}
 			//if cur has no classpath specified, return null
-			if(!cur.hasAttribute("classpath")){
+			if(!cur.hasAttribute(CLASSPATH)){
 				return null;
 			}
 			//get the class of cur
 			Class<?> c;
 			try{
-				c = (Class<?>) loader.loadClass(cur.getAttribute("classpath"));
+				c = (Class<?>) loader.loadClass(cur.getAttribute(CLASSPATH));
 			} catch(Exception e){
-				c = (Class<?>) Class.forName(cur.getAttribute("classpath"));
+				c = (Class<?>) Class.forName(cur.getAttribute(CLASSPATH));
 			}
 			//if cur is a wrapper type, parse and return it
 			if(isWrapperType(c)){
@@ -737,8 +781,13 @@ public class XMLSerializerUtil {
 			if(c.isArray()){
 				return readArray(c, cur, loader, references);
 			}
+			//get first non-serializable superclass
+			Class nonSerial = c;
+			while(Serializable.class.isAssignableFrom(nonSerial)){
+				nonSerial = nonSerial.getSuperclass();
+			}
 			//create object using constructor of its highest level superclass not implementing serializable
-			Object readObject = SilentObjectCreator.create(c);
+			Object readObject = SilentObjectCreator.create(c, nonSerial);
 			//add object to the references map
 			addReference(cur, references, readObject);
 			readFieldsRecurse(readObject, cur, loader, references, c);
@@ -758,11 +807,14 @@ public class XMLSerializerUtil {
 	 * @author Tristan Bepler
 	 */
 	private static void readFieldsRecurse(Object readObject, Element cur, ClassLoader loader, Map<Integer, Object> references, Class<?> clazz) throws ObjectReadException, NoSuchFieldException, IllegalAccessException {
-		if(hasChild(cur, "classfields")){
-			Element classNode = getDirectChildElementsByTag(cur, "classfields").get(0);
+		if(!Serializable.class.isAssignableFrom(clazz)){
+			return;
+		}
+		if(hasChild(cur, CLASSFIELDS)){
+			Element classNode = getDirectChildElementsByTag(cur, CLASSFIELDS).get(0);
 			//check if custom read method defined
 			try {
-				Method read = clazz.getDeclaredMethod("readObjectXML", ReadField.class);
+				Method read = clazz.getDeclaredMethod(CUSTOM_READ, ReadField.class);
 				if(read.getExceptionTypes()[0] == ObjectReadException.class){
 					ReadField reader = new ReadField(classNode, loader, references);
 					read.setAccessible(true);
@@ -780,7 +832,7 @@ public class XMLSerializerUtil {
 		if(clazz == null){
 			return;
 		}
-		Element superNode = getDirectChildElementsByTag(cur, "superclass").get(0);
+		Element superNode = getDirectChildElementsByTag(cur, SUPERCLASS).get(0);
 		readFieldsRecurse(readObject, superNode, loader, references, clazz);
 	}
 	
@@ -802,7 +854,7 @@ public class XMLSerializerUtil {
 			}
 			//if field is final, remove final modifier
 			if(Modifier.isFinal(f.getModifiers())){
-				Field mods = Field.class.getDeclaredField("modifiers");
+				Field mods = Field.class.getDeclaredField(MODIFIERS);
 				mods.setAccessible(true);
 				mods.setInt(f, f.getModifiers() & ~Modifier.FINAL);
 			}
@@ -834,11 +886,11 @@ public class XMLSerializerUtil {
 	 * @author Tristan Bepler
 	 */
 	private static Object readArray(Class<?> c, Element cur, ClassLoader loader, Map<Integer, Object> references) throws ObjectReadException {
-		List<Element> children = getDirectChildElementsByTag(cur, "entry");
+		List<Element> children = getDirectChildElementsByTag(cur, ENTRY);
 		Object readArray = Array.newInstance(c.getComponentType(), children.size());
 		addReference(cur, references, readArray);
 		for(Element entry : children){
-			int index = Integer.parseInt(entry.getAttribute("index"));
+			int index = Integer.parseInt(entry.getAttribute(INDEX));
 			Array.set(readArray, index, readTreeRecurse(entry, loader, references));
 		}
 		return readArray;
@@ -851,8 +903,8 @@ public class XMLSerializerUtil {
 	 * @author Tristan Bepler
 	 */
 	private static void addReference(Element cur, Map<Integer, Object> references, Object o) {
-		if(cur.hasAttribute("refId")){
-			int id = Integer.parseInt(cur.getAttribute("refId"));
+		if(cur.hasAttribute(REF_ID)){
+			int id = Integer.parseInt(cur.getAttribute(REF_ID));
 			references.put(id, o);
 		}
 	}
@@ -868,7 +920,7 @@ public class XMLSerializerUtil {
 		List<Element> children = new ArrayList<Element>();
 		Node child = node.getFirstChild();
 		while(child!=null){
-			if(child.getNodeType() == Node.ELEMENT_NODE && (child.getNodeName().equals(tag) || tag.equals("*"))){
+			if(child.getNodeType() == Node.ELEMENT_NODE && (child.getNodeName().equals(tag) || tag.equals(DOM_WILDCARD))){
 				children.add((Element) child);
 			}
 			child = child.getNextSibling();
@@ -883,7 +935,7 @@ public class XMLSerializerUtil {
 	 * @return - true if parent has a child with the given name, false otherwise
 	 */
 	public static boolean hasChild(Element node, String name){
-		List<Element> children = getDirectChildElementsByTag(node, "*");
+		List<Element> children = getDirectChildElementsByTag(node, DOM_WILDCARD);
 		for(Element e : children){
 			if(e.getNodeName().equals(name)){
 				return true;

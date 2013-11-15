@@ -83,6 +83,34 @@ public class TestXMLObjectSerializer extends junit.framework.TestCase{
 		}
 	}
 	
+	public static class TestNonSerialDefault{
+		String test;
+		public TestNonSerialDefault(){
+			test = "initialized";
+		}
+	}
+	
+	public static class TestNonSerialNoDefault{
+		String test;
+		public TestNonSerialNoDefault(String error){
+			test = error;
+		}
+	}
+	
+	public static class TestSerialExtendsDefault extends TestNonSerialDefault implements Serializable{
+		String contents;
+		public TestSerialExtendsDefault(String contents){
+			this.contents = contents;
+		}
+	}
+	
+	public static class TestSerialExtendsNoDefault extends TestNonSerialNoDefault implements Serializable{
+		String fail = "I should have a default superclass :(";
+		public TestSerialExtendsNoDefault(String error) {
+			super(error);
+		}
+	}
+	
 	
 	public void testCollection() throws ObjectWriteException, ObjectReadException{
 		
@@ -234,5 +262,23 @@ public class TestXMLObjectSerializer extends junit.framework.TestCase{
 		assertEquals(test.forget, "who cares?");
 	}
 	
+	public void testSerialNonSerial() throws ObjectWriteException, ObjectReadException{
+		TestSerialExtendsDefault t = new TestSerialExtendsDefault("42");
+		//Notice that the contents of the superclass are not written
+		XMLSerializerUtil.write(t, "test10.xml");
+		TestSerialExtendsDefault r = (TestSerialExtendsDefault) XMLSerializerUtil.read("test10.xml");
+		assertEquals(t.contents, r.contents);
+		assertEquals(t.test, r.test);
+		
+		TestSerialExtendsNoDefault f = new TestSerialExtendsNoDefault("Wow I have a lot of tests in here.");
+		boolean err = false;
+		try{
+			//The superclass has no default constructor, so this fails
+			XMLSerializerUtil.write(f, "test11.xml");
+		} catch (ObjectWriteException e){
+			err = true;
+		}
+		assertTrue(err);
+	}
 	
 }
